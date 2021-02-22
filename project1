@@ -1,0 +1,141 @@
+
+#include <ESP8266WiFi.h>
+#include <Servo.h> //引入lib
+Servo myservo;  // 
+
+#ifndef STASSID
+#define STASSID "www"
+#define STAPSK  "123456789"
+#endif
+
+const char* ssid     = STASSID;
+const char* password = STAPSK;
+
+const char* host = "tcp.lewei50.com";
+const uint16_t port = 9960;
+
+char inputString[250];
+int ii = 0;
+boolean stringComplete = false;
+
+int val = 0;
+
+long timer1 = 0;
+int angle=0;
+WiFiClient client;
+
+void setup() {
+  Serial.begin(115200);
+  
+  myservo.attach(D4);  // 
+  myservo.write( angle);    
+  // We start by connecting to a WiFi network
+
+  Serial.println();
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+
+  /* Explicitly set the ESP8266 to be a WiFi-client, otherwise, it by default,
+     would try to act as both a client and an access-point and could cause
+     network-issues with your other WiFi-devices on your WiFi-network. */
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connected");
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  Serial.print("connecting to ");
+  Serial.print(host);
+  Serial.print(':');
+  Serial.println(port);
+
+  // Use WiFiClient class to create TCP connections
+
+  if (!client.connect(host, port)) {
+    Serial.println("connection failed");
+    delay(5000);
+    return;
+  }
+  Serial.println("sending data to server");
+  if (client.connected()) {
+    client.println("{\"method\": \"update\",\"gatewayNo\": \"01\" ,\"userkey\": \"bc2570ba07fc423888ab2ea61ccba4ba\"}&^!");
+  }
+}
+
+void loop() {
+  val++;
+  if (val > 10)val = 0;
+
+
+  // This will send a string to the server
+  if (millis() - timer1 > 5000)
+  {
+    timer1 = millis();
+    myservo.write(angle);
+    if (client.connected()) {
+      Serial.println("sending data to server");
+      client.print("{\"method\": \"upload\",\"data\":[{\"Name\":\"t1\",\"Value\":");  ///T1   T2  wei she bei ming
+      client.print(val);
+      client.println("}]}&^!");
+    }
+
+  }
+
+  // Read all the lines of the reply from server and print them to Serial  //Serial.println("receiving from remote server");
+  // not testing 'client.connected()' since we do not need to send data here
+  while (client.available()) {
+    char ch = static_cast<char>(client.read());
+    //Serial.print(ch);
+    inputString[ii] = ch;
+    ii++;
+    if (ch == '&')
+    {
+      stringComplete = true;
+      ii = 0;
+      for (int i = 0; i < 250; i++)
+        Serial.print(inputString[i]);
+      Serial.println("");
+    }
+    if (stringComplete)
+    {
+      
+      if (strstr(inputString , "d1\",\"p2\"") != NULL) 
+       {
+
+           char *p;
+           p=strstr(inputString,"d1\",\"p2\""); 
+            angle=0;
+           for(int i=9;i<14;i++) 
+           {
+             Serial.println(p[i]);
+             if(p[i]>47 && p[i]<58)
+                angle=angle*10+(p[i]-48);
+            }     
+            if(angle>180)
+              angle=180;
+            if(angle<0)
+              angle=0;             
+           Serial.println("angle= "+String(angle));
+       }
+      
+      if (strstr(inputString , "send") != NULL)
+      {
+        client.print("{\"method\":\"response\",\"result\":{\"successful\":true,\"message\":\"ok!\",\"data\":[{\"id\":\"d1\",\"value\":\"");
+        client.print(angle);     
+        client.println("\"}]}}&^!");
+      }
+      memset(inputString, 0, 250);
+      stringComplete = false;
+    }
+
+  }
+
+}
